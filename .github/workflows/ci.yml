@@ -1,0 +1,239 @@
+# CI pipeline for the optimizer test repository.
+#
+# Jobs:
+#   unit-tests      — pure Go unit tests (no cluster needed)
+#   integration     — in-memory integration tests
+#   e2e             — kind cluster + controller smoke tests
+#   coverage-report — enforce >80% coverage gate across unit+integration
+#
+# Triggers: push, pull_request, and nightly schedule.
+#
+# How the two-repo dependency is handled:
+#   go.mod has:  replace intelligent-cluster-optimizer => ../intelligent-cluster-optimizer
+#
+#   In CI, GitHub Actions checks out each repo into its own subdirectory under
+#   $GITHUB_WORKSPACE.  We check out the test repo into "optimizer-test/" and
+#   the main repo into "intelligent-cluster-optimizer/" — making them siblings,
+#   which matches the replace path exactly.
+#
+#   Runner workspace layout:
+#     $GITHUB_WORKSPACE/
+#       optimizer-test/                ← this repo (default checkout)
+#       intelligent-cluster-optimizer/ ← main repo (path: ../intelligent-cluster-optimizer
+#                                         relative to the test repo checkout)
+name: CI
+
+on:
+  push:
+    branches: ["main", "feature/**"]
+  pull_request:
+    branches: ["main"]
+  schedule:
+    # Nightly at 02:00 UTC
+    - cron: "0 2 * * *"
+
+env:
+  # Go version must match the main repo's go.mod
+  GO_VERSION: "1.23"
+  IMAGE_NAME: "intelligent-cluster-optimizer:latest"
+
+jobs:
+  # ── 1. Unit Tests ─────────────────────────────────────────────────────────
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      # Check out THIS repo into $GITHUB_WORKSPACE/optimizer-test
+      - name: Checkout test repo
+        uses: actions/checkout@v4
+        with:
+          path: optimizer-test
+
+      # Check out the main repo into $GITHUB_WORKSPACE/intelligent-cluster-optimizer
+      # From the test repo's perspective this is ../intelligent-cluster-optimizer —
+      # exactly what go.mod's replace directive points to.
+      - name: Checkout main repo
+        uses: actions/checkout@v4
+        with:
+          repository: k8s-resource-optimizer/intelligent-cluster-optimizer
+          path: intelligent-cluster-optimizer
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Run unit tests
+        working-directory: optimizer-test
+        run: |
+          go test ./unit/... \
+            -v \
+            -race \
+            -coverprofile=coverage-unit.out \
+            -covermode=atomic \
+            -timeout 5m
+
+      - name: Upload unit coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-unit
+          path: optimizer-test/coverage-unit.out
+
+  # ── 2. Integration Tests ──────────────────────────────────────────────────
+  integration:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout test repo
+        uses: actions/checkout@v4
+        with:
+          path: optimizer-test
+
+      - name: Checkout main repo
+        uses: actions/checkout@v4
+        with:
+          repository: k8s-resource-optimizer/intelligent-cluster-optimizer
+          path: intelligent-cluster-optimizer
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Run integration tests
+        working-directory: optimizer-test
+        run: |
+          go test ./integration/... \
+            -v \
+            -race \
+            -coverprofile=coverage-integration.out \
+            -covermode=atomic \
+            -timeout 10m
+
+      - name: Upload integration coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-integration
+          path: optimizer-test/coverage-integration.out
+
+  # ── 3. E2E Tests (kind cluster) ───────────────────────────────────────────
+  e2e:
+    name: E2E Tests (kind)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout test repo
+        uses: actions/checkout@v4
+        with:
+          path: optimizer-test
+
+      - name: Checkout main repo
+        uses: actions/checkout@v4
+        with:
+          repository: k8s-resource-optimizer/intelligent-cluster-optimizer
+          path: intelligent-cluster-optimizer
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Install kind
+        run: |
+          curl -Lo ./kind \
+            "https://kind.sigs.k8s.io/dl/v0.23.0/kind-linux-amd64"
+          chmod +x ./kind
+          sudo mv ./kind /usr/local/bin/kind
+          kind version
+
+      - name: Build controller image
+        run: |
+          docker build \
+            --file intelligent-cluster-optimizer/Dockerfile \
+            --tag  ${{ env.IMAGE_NAME }} \
+            intelligent-cluster-optimizer
+
+      - name: Set up kind cluster and deploy controller
+        working-directory: optimizer-test
+        run: bash scripts/setup-kind.sh --skip-build
+
+      - name: Export KUBECONFIG for tests
+        run: |
+          echo "KUBECONFIG=$(kind get kubeconfig --name optimizer-test 2>/dev/null)" \
+            >> "$GITHUB_ENV"
+
+      - name: Run E2E smoke tests
+        working-directory: optimizer-test
+        run: |
+          go test ./e2e/... \
+            -v \
+            -timeout 5m
+        env:
+          KUBECONFIG: ${{ env.KUBECONFIG }}
+
+      - name: Collect controller logs on failure
+        if: failure()
+        run: |
+          kubectl logs \
+            --namespace intelligent-optimizer-system \
+            --selector "app.kubernetes.io/name=intelligent-cluster-optimizer" \
+            --tail 200 || true
+
+      - name: Tear down kind cluster
+        if: always()
+        working-directory: optimizer-test
+        run: bash scripts/teardown-kind.sh
+
+  # ── 4. Coverage Gate ──────────────────────────────────────────────────────
+  coverage-report:
+    name: Coverage Gate (>80%)
+    runs-on: ubuntu-latest
+    needs: [unit-tests, integration]
+    steps:
+      - name: Download unit coverage
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-unit
+
+      - name: Download integration coverage
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-integration
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Merge coverage profiles
+        run: |
+          # Combine both profiles into one (skip the duplicate header lines)
+          cat coverage-unit.out > coverage-merged.out
+          tail -n +2 coverage-integration.out >> coverage-merged.out
+
+      - name: Check coverage gate (>80%)
+        run: |
+          COVERAGE=$(go tool cover -func=coverage-merged.out \
+            | grep "^total:" | awk '{print $3}' | tr -d '%')
+          echo "Total coverage: ${COVERAGE}%"
+          # Use awk for floating-point comparison (bash only handles integers)
+          awk -v cov="$COVERAGE" 'BEGIN {
+            if (cov+0 < 80) {
+              print "FAIL: coverage " cov "% is below the 80% requirement"
+              exit 1
+            } else {
+              print "PASS: coverage " cov "% meets the 80% requirement"
+            }
+          }'
+
+      - name: Generate HTML coverage report
+        run: |
+          go tool cover -html=coverage-merged.out -o coverage.html
+
+      - name: Upload HTML coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage.html
