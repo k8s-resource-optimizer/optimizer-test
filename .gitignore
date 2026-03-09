@@ -1,0 +1,12 @@
+# Local copy of the main repo (managed by scripts/setup-deps.sh).
+# Never commit this — it is either a symlink or a full clone.
+deps/
+
+# Go test artifacts
+*.out
+coverage.html
+
+# Editor / OS
+.DS_Store
+.idea/
+*.swp
