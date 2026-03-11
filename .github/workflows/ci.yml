@@ -6,21 +6,13 @@
 #   e2e             — kind cluster + controller smoke tests
 #   coverage-report — enforce >80% coverage gate across unit+integration
 #
-# Triggers: push, pull_request, and nightly schedule.
+# Dependency layout:
+#   go.mod has: replace intelligent-cluster-optimizer => ../intelligent-cluster-optimizer
 #
-# How the two-repo dependency is handled:
-#   go.mod has:  replace intelligent-cluster-optimizer => ../intelligent-cluster-optimizer
-#
-#   In CI, GitHub Actions checks out each repo into its own subdirectory under
-#   $GITHUB_WORKSPACE.  We check out the test repo into "optimizer-test/" and
-#   the main repo into "intelligent-cluster-optimizer/" — making them siblings,
-#   which matches the replace path exactly.
-#
-#   Runner workspace layout:
+#   CI checks out both repos at the same level under $GITHUB_WORKSPACE:
 #     $GITHUB_WORKSPACE/
-#       optimizer-test/                ← this repo (default checkout)
-#       intelligent-cluster-optimizer/ ← main repo (path: ../intelligent-cluster-optimizer
-#                                         relative to the test repo checkout)
+#       optimizer-test/                ← this repo
+#       intelligent-cluster-optimizer/ ← main repo  (= ../intelligent-cluster-optimizer)
 name: CI
 
 on:
@@ -29,11 +21,9 @@ on:
   pull_request:
     branches: ["main"]
   schedule:
-    # Nightly at 02:00 UTC
     - cron: "0 2 * * *"
 
 env:
-  # Go version must match the main repo's go.mod
   GO_VERSION: "1.23"
   IMAGE_NAME: "intelligent-cluster-optimizer:latest"
 
@@ -43,15 +33,11 @@ jobs:
     name: Unit Tests
     runs-on: ubuntu-latest
     steps:
-      # Check out THIS repo into $GITHUB_WORKSPACE/optimizer-test
       - name: Checkout test repo
         uses: actions/checkout@v4
         with:
           path: optimizer-test
 
-      # Check out the main repo into $GITHUB_WORKSPACE/intelligent-cluster-optimizer
-      # From the test repo's perspective this is ../intelligent-cluster-optimizer —
-      # exactly what go.mod's replace directive points to.
       - name: Checkout main repo
         uses: actions/checkout@v4
         with:
@@ -63,6 +49,12 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
+          # go.sum lives inside the checked-out subdirectory
+          cache-dependency-path: optimizer-test/go.sum
+
+      - name: Download dependencies
+        working-directory: optimizer-test
+        run: go mod download
 
       - name: Run unit tests
         working-directory: optimizer-test
@@ -101,6 +93,11 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
+          cache-dependency-path: optimizer-test/go.sum
+
+      - name: Download dependencies
+        working-directory: optimizer-test
+        run: go mod download
 
       - name: Run integration tests
         working-directory: optimizer-test
@@ -139,6 +136,11 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
+          cache-dependency-path: optimizer-test/go.sum
+
+      - name: Download dependencies
+        working-directory: optimizer-test
+        run: go mod download
 
       - name: Install kind
         run: |
@@ -161,15 +163,12 @@ jobs:
 
       - name: Export KUBECONFIG for tests
         run: |
-          echo "KUBECONFIG=$(kind get kubeconfig --name optimizer-test 2>/dev/null)" \
-            >> "$GITHUB_ENV"
+          kind export kubeconfig --name optimizer-test --kubeconfig /tmp/kubeconfig-optimizer
+          echo "KUBECONFIG=/tmp/kubeconfig-optimizer" >> "$GITHUB_ENV"
 
       - name: Run E2E smoke tests
         working-directory: optimizer-test
-        run: |
-          go test ./e2e/... \
-            -v \
-            -timeout 5m
+        run: go test ./e2e/... -v -timeout 5m
         env:
           KUBECONFIG: ${{ env.KUBECONFIG }}
 
@@ -209,7 +208,6 @@ jobs:
 
       - name: Merge coverage profiles
         run: |
-          # Combine both profiles into one (skip the duplicate header lines)
           cat coverage-unit.out > coverage-merged.out
           tail -n +2 coverage-integration.out >> coverage-merged.out
 
@@ -218,7 +216,6 @@ jobs:
           COVERAGE=$(go tool cover -func=coverage-merged.out \
             | grep "^total:" | awk '{print $3}' | tr -d '%')
           echo "Total coverage: ${COVERAGE}%"
-          # Use awk for floating-point comparison (bash only handles integers)
           awk -v cov="$COVERAGE" 'BEGIN {
             if (cov+0 < 80) {
               print "FAIL: coverage " cov "% is below the 80% requirement"
@@ -229,8 +226,7 @@ jobs:
           }'
 
       - name: Generate HTML coverage report
-        run: |
-          go tool cover -html=coverage-merged.out -o coverage.html
+        run: go tool cover -html=coverage-merged.out -o coverage.html
 
       - name: Upload HTML coverage report
         uses: actions/upload-artifact@v4
