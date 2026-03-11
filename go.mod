@@ -2,6 +2,8 @@ module github.com/k8s-resource-optimizer/optimizer-test
 
 go 1.26.1
 
+// Point to the main repo. Change this path if you cloned it elsewhere.
+// In CI this is handled automatically via the checkout layout.
 replace intelligent-cluster-optimizer => ../intelligent-cluster-optimizer
 
 require (
