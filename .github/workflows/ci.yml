@@ -24,7 +24,7 @@ on:
     - cron: "0 2 * * *"
 
 env:
-  GO_VERSION: "1.23"
+  GO_VERSION: "1.26"
   IMAGE_NAME: "intelligent-cluster-optimizer:latest"
 
 jobs:
@@ -43,6 +43,7 @@ jobs:
         with:
           repository: k8s-resource-optimizer/intelligent-cluster-optimizer
           path: intelligent-cluster-optimizer
+          token: ${{ secrets.GH_PAT }}
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -62,6 +63,7 @@ jobs:
           go test ./unit/... \
             -v \
             -race \
+            -coverpkg=intelligent-cluster-optimizer/pkg/... \
             -coverprofile=coverage-unit.out \
             -covermode=atomic \
             -timeout 5m
@@ -87,6 +89,7 @@ jobs:
         with:
           repository: k8s-resource-optimizer/intelligent-cluster-optimizer
           path: intelligent-cluster-optimizer
+          token: ${{ secrets.GH_PAT }}
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -130,6 +133,7 @@ jobs:
         with:
           repository: k8s-resource-optimizer/intelligent-cluster-optimizer
           path: intelligent-cluster-optimizer
+          token: ${{ secrets.GH_PAT }}
 
       - name: Set up Go
         uses: actions/setup-go@v5
