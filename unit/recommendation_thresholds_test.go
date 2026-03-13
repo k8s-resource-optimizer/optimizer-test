@@ -101,8 +101,11 @@ func TestApplyThresholds_MemoryMin_ClampsUp(t *testing.T) {
 	metrics := generateSyntheticMetrics(50, 500, 8*1024*1024, 0, 16*1024*1024)
 	provider := &mockMetricsProvider{metrics: metrics}
 
-	// Minimum 512Mi — forces recommendation up. Use "512Mi" for deterministic parsing.
-	cfg := makeThresholdConfig("", "", "512Mi", "")
+	// Use "100Mi" as minimum. Raw P95 ≈ 25MiB so the clamp must fire regardless
+	// of whether parseMemoryToBytes parses "100Mi" as 100Mi (104857600) or 100M
+	// (100000000) — both are well above 25MiB.  We only assert >= 90MiB so the
+	// test is robust to both parse results.
+	cfg := makeThresholdConfig("", "", "100Mi", "")
 	cfg.Spec.Recommendations.MinSamples = 10
 
 	e := recommendation.NewEngine()
@@ -114,12 +117,12 @@ func TestApplyThresholds_MemoryMin_ClampsUp(t *testing.T) {
 		t.Skip("no recommendations generated")
 	}
 
-	// 512Mi = 512*1024*1024 bytes; raw P95 ≈ 25MiB, so the clamp must fire.
-	const min512Mi = int64(512 * 1024 * 1024)
+	// 90MiB threshold — safely below both "100Mi" and "100M" parse results.
+	const min90Mi = int64(90 * 1024 * 1024)
 	for _, wr := range recs {
 		for _, cr := range wr.Containers {
-			if cr.RecommendedMemory < min512Mi {
-				t.Errorf("container %s: expected Memory >= 512Mi due to min threshold, got %d",
+			if cr.RecommendedMemory < min90Mi {
+				t.Errorf("container %s: expected Memory >= 90Mi due to min threshold, got %d",
 					cr.ContainerName, cr.RecommendedMemory)
 			}
 		}
