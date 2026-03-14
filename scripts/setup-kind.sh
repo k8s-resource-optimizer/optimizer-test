@@ -80,9 +80,10 @@ EOF
 fi
 
 # Export kubeconfig so subsequent kubectl and go test commands use this cluster.
-export KUBECONFIG
-KUBECONFIG="$(kind get kubeconfig --name "$CLUSTER_NAME" 2>/dev/null)"
-info "KUBECONFIG set to kind context"
+KUBECONFIG_FILE="/tmp/kind-${CLUSTER_NAME}.yaml"
+kind export kubeconfig --name "$CLUSTER_NAME" --kubeconfig "$KUBECONFIG_FILE"
+export KUBECONFIG="$KUBECONFIG_FILE"
+info "KUBECONFIG set to $KUBECONFIG_FILE"
 
 # ── 2. Ensure main repo is available ──────────────────────────────────────────
 if [ ! -d "$MAIN_REPO_DIR" ]; then

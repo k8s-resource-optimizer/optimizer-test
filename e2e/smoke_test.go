@@ -26,6 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/client-go/util/retry"
 )
 
 const (
@@ -41,6 +42,23 @@ const (
 	// testNamespace is used for test workloads.
 	testNamespace = "optimizer-e2e-test"
 )
+
+// TestMain runs setup/teardown around the full e2e suite.
+// It deletes any leftover test Deployments from previous runs before starting.
+func TestMain(m *testing.M) {
+	os.Exit(m.Run())
+}
+
+// cleanupLeftovers deletes known test Deployments that may have been left
+// behind by a previous interrupted run.
+func cleanupLeftovers(client kubernetes.Interface) {
+	ctx := context.Background()
+	leftovers := []string{"over-provisioned-test", "rollback-test"}
+	for _, name := range leftovers {
+		_ = client.AppsV1().Deployments(testNamespace).
+			Delete(ctx, name, metav1.DeleteOptions{})
+	}
+}
 
 // kubeClient builds a Kubernetes client from the KUBECONFIG env var or the
 // default ~/.kube/config.  Tests are skipped if no cluster is reachable.
@@ -190,6 +208,7 @@ func TestSmoke_MetricsEndpointReachable(t *testing.T) {
 func TestE2E_OverProvisionedDeploymentIsDetected(t *testing.T) {
 	client := kubeClient(t)
 	ensureNamespace(t, client, testNamespace)
+	cleanupLeftovers(client)
 	ctx := context.Background()
 
 	// Deploy a workload with deliberately high resource requests.
@@ -292,6 +311,7 @@ func TestE2E_OverProvisionedDeploymentIsDetected(t *testing.T) {
 func TestE2E_RollbackRestoresWith60s(t *testing.T) {
 	client := kubeClient(t)
 	ensureNamespace(t, client, testNamespace)
+	cleanupLeftovers(client)
 	ctx := context.Background()
 
 	replicas := int32(1)
@@ -351,11 +371,18 @@ func TestE2E_RollbackRestoresWith60s(t *testing.T) {
 		t.Fatalf("patch Deployment: %v", err)
 	}
 
-	// Simulate rollback: re-apply original CPU request.
-	rollback := patched.DeepCopy()
-	rollback.Spec.Template.Spec.Containers[0].Resources.Requests[corev1.ResourceCPU] = originalCPU
-
-	_, err = client.AppsV1().Deployments(testNamespace).Update(ctx, rollback, metav1.UpdateOptions{})
+	// Simulate rollback with retry on conflict — the deployment controller may
+	// update resourceVersion between our Get and Update calls.
+	err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		latest, err := client.AppsV1().Deployments(testNamespace).Get(ctx, created.Name, metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
+		rollback := latest.DeepCopy()
+		rollback.Spec.Template.Spec.Containers[0].Resources.Requests[corev1.ResourceCPU] = originalCPU
+		_, err = client.AppsV1().Deployments(testNamespace).Update(ctx, rollback, metav1.UpdateOptions{})
+		return err
+	})
 	if err != nil {
 		t.Fatalf("rollback update: %v", err)
 	}
