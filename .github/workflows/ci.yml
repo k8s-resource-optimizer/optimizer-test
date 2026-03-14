@@ -106,6 +106,7 @@ jobs:
           go test ./integration/... \
             -v \
             -race \
+            -coverpkg=intelligent-cluster-optimizer/pkg/... \
             -coverprofile=coverage-integration.out \
             -covermode=atomic \
             -timeout 10m
@@ -192,6 +193,28 @@ jobs:
     runs-on: ubuntu-latest
     needs: [unit-tests, integration]
     steps:
+      - name: Checkout test repo
+        uses: actions/checkout@v4
+        with:
+          path: optimizer-test
+
+      - name: Checkout main repo
+        uses: actions/checkout@v4
+        with:
+          repository: k8s-resource-optimizer/intelligent-cluster-optimizer
+          path: intelligent-cluster-optimizer
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+          cache-dependency-path: optimizer-test/go.sum
+
+      - name: Download dependencies
+        working-directory: optimizer-test
+        run: go mod download
+
       - name: Download unit coverage
         uses: actions/download-artifact@v4
         with:
@@ -202,17 +225,14 @@ jobs:
         with:
           name: coverage-integration
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: ${{ env.GO_VERSION }}
-
       - name: Merge coverage profiles
+        working-directory: optimizer-test
         run: |
-          cat coverage-unit.out > coverage-merged.out
-          tail -n +2 coverage-integration.out >> coverage-merged.out
+          cat ../coverage-unit.out > coverage-merged.out
+          tail -n +2 ../coverage-integration.out >> coverage-merged.out
 
       - name: Check coverage gate (>80%)
+        working-directory: optimizer-test
         run: |
           COVERAGE=$(go tool cover -func=coverage-merged.out \
             | grep "^total:" | awk '{print $3}' | tr -d '%')
@@ -227,10 +247,11 @@ jobs:
           }'
 
       - name: Generate HTML coverage report
+        working-directory: optimizer-test
         run: go tool cover -html=coverage-merged.out -o coverage.html
 
       - name: Upload HTML coverage report
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report
-          path: coverage.html
+          path: optimizer-test/coverage.html
