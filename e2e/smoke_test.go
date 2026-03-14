@@ -103,9 +103,6 @@ func ensureNamespace(t *testing.T, client kubernetes.Interface, ns string) {
 	if err != nil {
 		t.Fatalf("failed to create namespace %s: %v", ns, err)
 	}
-	t.Cleanup(func() {
-		_ = client.CoreV1().Namespaces().Delete(context.Background(), ns, metav1.DeleteOptions{})
-	})
 }
 
 // ─── Smoke Tests ─────────────────────────────────────────────────────────────
