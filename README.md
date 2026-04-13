@@ -78,28 +78,39 @@ KUBECONFIG=/tmp/kind-optimizer-test.yaml go test ./e2e/... -v -timeout 5m
 
 | Layer       | Test Files | Test Cases | Coverage of `pkg/` |
 |-------------|:----------:|:----------:|:------------------:|
-| Unit        | 9          | 439        | ~45%               |
-| Integration | 28         | 131        | ~81.8%             |
-| E2E         | 5          | 11         | N/A (cluster)      |
-| **Total**   | **42**     | **581**    | **81.8%**          |
+| Unit        | 48         | 606        | 84.2%              |
+| Integration | 37         | 341        | 77.8%              |
+| E2E         | 6          | 12         | N/A (cluster)      |
+| **Total**   | **91**     | **959**    | **83.0%**          |
 
 > Target: **80%** ✅ — achieved.
 
 ### Coverage by Package
 
-| Package               | Coverage | Status |
-|-----------------------|:--------:|:------:|
-| `pkg/pareto`          | high     | 🟢     |
-| `pkg/leakdetector`    | high     | 🟢     |
-| `pkg/recommendation`  | high     | 🟢     |
-| `pkg/policy`          | high     | 🟢     |
-| `pkg/prediction`      | high     | 🟢     |
-| `pkg/safety`          | high     | 🟢     |
-| `pkg/sla`             | high     | 🟢     |
-| `pkg/trends`          | high     | 🟢     |
-| `pkg/storage`         | high     | 🟢     |
-| `pkg/cost`            | high     | 🟢     |
-| `pkg/apis`            | E2E only | 🔵     |
+| Package              | Coverage | Status |
+|----------------------|:--------:|:------:|
+| `pkg/events`         | 100.0%   | 🟢     |
+| `pkg/applier`        | 98.1%    | 🟢     |
+| `pkg/cost`           | 97.5%    | 🟢     |
+| `pkg/scheduler`      | 97.4%    | 🟢     |
+| `pkg/pareto`         | 96.4%    | 🟢     |
+| `pkg/profile`        | 95.5%    | 🟢     |
+| `pkg/apiserver`      | 94.4%    | 🟢     |
+| `pkg/prediction`     | 93.0%    | 🟢     |
+| `pkg/anomaly`        | 91.3%    | 🟢     |
+| `pkg/policy`         | 91.2%    | 🟢     |
+| `pkg/storage`        | 90.8%    | 🟢     |
+| `pkg/recommendation` | 90.0%    | 🟢     |
+| `pkg/rollback`       | 89.9%    | 🟢     |
+| `pkg/safety`         | 89.4%    | 🟢     |
+| `pkg/sla`            | 94.0%    | 🟢     |
+| `pkg/leakdetector`   | 83.1%    | 🟢     |
+| `pkg/apis`           | 83.2%    | 🟢     |
+| `pkg/trends`         | 82.7%    | 🟢     |
+| `pkg/forecaster`     | 76.7%    | 🟡     |
+| `pkg/gitops`         | 74.3%    | 🟡     |
+| `pkg/scaler`         | 72.2%    | 🟡     |
+| `pkg/controller`     | 47.8%    | 🔴     |
 
 > `pkg/apis` contains the Kubernetes CRD client — exercised by E2E tests only.
 
@@ -131,7 +142,9 @@ KUBECONFIG=/tmp/kind-optimizer-test.yaml go test ./e2e/... -v -timeout 5m
 | `TestE2E_OptimizerConfigLifecycle` | Full CRD CRUD: Create → List → Get → Watch → Update → Delete |
 | `TestE2E_ControllerRecovery` | Pod deletion triggers restart; new pod acquires leader lease |
 | `TestE2E_DryRunMode` | `dryRun:true` — controller does not modify workload resources |
+| `TestE2E_DryRun_ReplicaCountUnchanged` | Replica count stays unchanged in dry-run mode |
 | `TestE2E_NamespaceIsolation` | Controller only acts on namespaces listed in `targetNamespaces` |
+| `TestE2E_NoMLService_HoltWintersFallback` | Controller falls back to Holt-Winters when ML service is unavailable |
 | `TestE2E_OverProvisionedDeploymentIsDetected` | Controller stays alive when processing over-provisioned workload |
 | `TestE2E_RollbackRestoresWith60s` | Resource rollback completes within 60 seconds |
 
