@@ -24,11 +24,12 @@ func TestBackupManager_EnabledStart_Stop(t *testing.T) {
 	dir := t.TempDir()
 	bm := storage.NewBackupManager(
 		storage.NewStorage(),
+		nil,
 		storage.BackupConfig{
 			Enabled:        true,
 			StorageDir:     dir,
 			RetentionCount: 5,
-			BackupInterval: 100 * time.Millisecond, // short so the loop starts quickly
+			BackupInterval: 100 * time.Millisecond,
 		},
 		zap.NewNop(),
 	)

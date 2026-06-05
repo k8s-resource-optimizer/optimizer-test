@@ -29,11 +29,11 @@ func newTestBackupManager(s *storage.InMemoryStorage, tempDir string, retention 
 	if retention == 0 {
 		retention = 10
 	}
-	return storage.NewBackupManager(s, storage.BackupConfig{
+	return storage.NewBackupManager(s, nil, storage.BackupConfig{
 		Enabled:        true,
 		StorageDir:     tempDir,
 		RetentionCount: retention,
-		BackupInterval: 1 * time.Hour, // long interval so the background goroutine won't fire during tests
+		BackupInterval: 1 * time.Hour,
 	}, zap.NewNop())
 }
 
@@ -43,7 +43,7 @@ func newTestBackupManager(s *storage.InMemoryStorage, tempDir string, retention 
 // nil logger falls back to nop logger without panic.
 func TestBackupManager_NewBackupManager_NilLoggerNoPanic(t *testing.T) {
 	s := storage.NewStorage()
-	bm := storage.NewBackupManager(s, storage.BackupConfig{Enabled: true, StorageDir: t.TempDir()}, nil)
+	bm := storage.NewBackupManager(s, nil, storage.BackupConfig{Enabled: true, StorageDir: t.TempDir()}, nil)
 	if bm == nil {
 		t.Fatal("expected non-nil BackupManager")
 	}
@@ -53,7 +53,7 @@ func TestBackupManager_NewBackupManager_NilLoggerNoPanic(t *testing.T) {
 // manager returns no error.
 func TestBackupManager_DisabledStart_NoError(t *testing.T) {
 	s := storage.NewStorage()
-	bm := storage.NewBackupManager(s, storage.BackupConfig{Enabled: false}, zap.NewNop())
+	bm := storage.NewBackupManager(s, nil, storage.BackupConfig{Enabled: false}, zap.NewNop())
 	if err := bm.Start(); err != nil {
 		t.Errorf("Start() on disabled manager returned error: %v", err)
 	}
@@ -63,7 +63,7 @@ func TestBackupManager_DisabledStart_NoError(t *testing.T) {
 // manager does not panic.
 func TestBackupManager_DisabledStop_NoPanic(t *testing.T) {
 	s := storage.NewStorage()
-	bm := storage.NewBackupManager(s, storage.BackupConfig{Enabled: false}, zap.NewNop())
+	bm := storage.NewBackupManager(s, nil, storage.BackupConfig{Enabled: false}, zap.NewNop())
 	bm.Stop() // must not panic
 }
 
