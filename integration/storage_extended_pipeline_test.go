@@ -100,7 +100,7 @@ func TestStoragePipeline_BackupManager(t *testing.T) {
 	st := populatedStorage(20, 100, 100, 64*1024*1024, 64*1024*1024, 1*time.Hour)
 	dir := t.TempDir()
 
-	bm := storage.NewBackupManager(st, storage.BackupConfig{
+	bm := storage.NewBackupManager(st, nil, storage.BackupConfig{
 		Enabled:        true,
 		StorageDir:     dir,
 		RetentionCount: 3,
@@ -125,11 +125,11 @@ func TestStoragePipeline_BackupCreateAndRestore(t *testing.T) {
 	st := populatedStorage(20, 100, 100, 64*1024*1024, 64*1024*1024, 1*time.Hour)
 	dir := t.TempDir()
 
-	bm := storage.NewBackupManager(st, storage.BackupConfig{
+	bm := storage.NewBackupManager(st, nil, storage.BackupConfig{
 		Enabled:        true,
 		StorageDir:     dir,
 		RetentionCount: 5,
-		BackupInterval: 1 * time.Hour, // long interval so auto-backup doesn't interfere
+		BackupInterval: 1 * time.Hour,
 	}, nil)
 
 	if err := bm.CreateBackup(); err != nil {
@@ -145,7 +145,7 @@ func TestStoragePipeline_BackupCreateAndRestore(t *testing.T) {
 	}
 
 	st2 := storage.NewStorage()
-	bm2 := storage.NewBackupManager(st2, storage.BackupConfig{
+	bm2 := storage.NewBackupManager(st2, nil, storage.BackupConfig{
 		Enabled:    true,
 		StorageDir: dir,
 	}, nil)
